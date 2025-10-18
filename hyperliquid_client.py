@@ -276,5 +276,8 @@ class HyperliquidClient:
         else:
             return False, data
 
+    def start_control_loop(self):
+        self.control_loop_flag = True
+    
     def stop_control_loop(self):
         self.control_loop_flag = False

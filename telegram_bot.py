@@ -159,6 +159,8 @@ async def start_monitoring_command(update: Update, context: ContextTypes.DEFAULT
     if client is None:
         client = HyperliquidClient()
     
+    client.start_control_loop()
+    
     client.telegram_chat_id = update.effective_chat.id
     client.telegram_bot = context.bot
     
