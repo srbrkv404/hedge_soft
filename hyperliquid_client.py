@@ -37,7 +37,11 @@ class HyperliquidClient:
 
         self.control_loop_flag = True
 
-        self.cur_eth_size = float(self.get_hl_positions()['szi'])
+        hl_position = self.get_hl_positions()
+        if hl_position:
+            self.cur_eth_size = abs(float(hl_position['szi']))
+        else:
+            self.cur_eth_size = 0.0
 
 
     def set_deviation(self, deviation: float):
@@ -51,6 +55,13 @@ class HyperliquidClient:
 
     def get_timeout(self) -> int:
         return self.timeout
+
+    def update_cur_eth_size(self):
+        hl_position = self.get_hl_positions()
+        if hl_position:
+            self.cur_eth_size = abs(float(hl_position['szi']))
+        else:
+            self.cur_eth_size = 0.0
 
     def get_eth_price(self) -> float:
         all_mids = self.info.all_mids()
@@ -84,14 +95,14 @@ class HyperliquidClient:
                 reduce_only=False
             )
 
-            self.cur_eth_size = float(self.get_hl_positions()['szi'])
+            self.update_cur_eth_size()
             
             if order_result.get("status") == "ok":
                 return True, order_result
             else:
                 return False, order_result
         except Exception as e:
-            self.cur_eth_size = float(self.get_hl_positions()['szi'])
+            self.update_cur_eth_size()
             return False, str(e)
 
     def decrease_short(self):
@@ -121,14 +132,14 @@ class HyperliquidClient:
                 reduce_only=True
             )
 
-            self.cur_eth_size = float(self.get_hl_positions()['szi'])
+            self.update_cur_eth_size()
 
             if order_result.get("status") == "ok":
                 return True, order_result
             else:
                 return False, order_result
         except Exception as e:
-            self.cur_eth_size = float(self.get_hl_positions()['szi'])
+            self.update_cur_eth_size()
             return False, str(e)
 
     def place_min_short(self):
@@ -151,14 +162,14 @@ class HyperliquidClient:
                     reduce_only=True
                 )
 
-                self.cur_eth_size = float(self.get_hl_positions()['szi'])
+                self.update_cur_eth_size()
 
                 if order_result.get("status") == "ok":
                     return True, order_result
                 else:
                     return False, order_result
             except Exception as e:
-                self.cur_eth_size = float(self.get_hl_positions()['szi'])
+                self.update_cur_eth_size()
                 return False, str(e)
 
     def place_max_short(self):
@@ -185,14 +196,14 @@ class HyperliquidClient:
                     reduce_only=False
                 )
 
-                self.cur_eth_size = float(self.get_hl_positions()['szi'])
+                self.update_cur_eth_size()
 
                 if order_result.get("status") == "ok":
                     return True, order_result
                 else:
                     return False, order_result
             except Exception as e:
-                self.cur_eth_size = float(self.get_hl_positions()['szi'])
+                self.update_cur_eth_size()
                 return False, str(e)
 
     def get_hl_positions(self):
