@@ -283,19 +283,19 @@ class HyperliquidClient:
 
         if success:
             if data[0] < 0.001:
-                self.cur_eth_price = data[0]
+                self.cur_eth_size = data[0]
                 return True, "place_min_short"
             elif data[1] < 1:
-                self.cur_eth_price = data[0]
+                self.cur_eth_size = data[0]
                 return True, "place_max_short"
 
         if success:
             if abs(self.cur_eth_size - data[0]) > self.deviation:
                 if self.cur_eth_size > data[0]:
-                    self.cur_eth_price = data[0]
+                    self.cur_eth_size = data[0]
                     return True, "decrease"
                 else:
-                    self.cur_eth_price = data[0]
+                    self.cur_eth_size = data[0]
                     return True, "increase"
             else:
                 return False, "no_change"
