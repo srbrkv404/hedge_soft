@@ -62,11 +62,21 @@ class HyperliquidClient:
         return eth_price
 
     def increase_short(self):
+        success, data = self.get_ekubo_positions()
         eth_price = self.get_eth_price()
 
         limit_price = round(eth_price * 0.99, 1)
         
-        size_eth = max(math.ceil((10 / eth_price) * 1000) / 1000, round(self.deviation, 3))
+        ekubo_eth_size = 0
+        if success:
+            ekubo_eth_size = data[0]
+        
+        increase_coef = (ekubo_eth_size - self.cur_eth_size) // self.deviation
+
+        size_eth = max(
+            math.ceil((10 / eth_price) * 1000) / 1000,
+            round(self.deviation * increase_coef, 3)
+        )
 
         try:
             order_result = self.exchange.order(
@@ -86,11 +96,21 @@ class HyperliquidClient:
             return False, str(e)
 
     def decrease_short(self):
+        success, data = self.get_ekubo_positions()
         eth_price = self.get_eth_price()
 
         limit_price = round(eth_price * 1.01, 1)
+
+        ekubo_eth_size = 0
+        if success:
+            ekubo_eth_size = data[0]
         
-        size_eth = max(math.ceil((10 / eth_price) * 1000) / 1000, round(self.deviation, 3))
+        decrease_coef = (ekubo_eth_size - self.cur_eth_size) // self.deviation
+        
+        size_eth = max(
+            math.ceil((10 / eth_price) * 1000) / 1000,
+            round(self.deviation * decrease_coef, 3)
+        )
         
         try:
             order_result = self.exchange.order(
@@ -261,15 +281,19 @@ class HyperliquidClient:
 
         if success:
             if data[0] < 0.001:
+                self.eth_price = data[0]
                 return True, "place_min_short"
             elif data[1] < 1:
+                self.eth_price = data[0]
                 return True, "place_max_short"
 
         if success:
             if abs(self.cur_eth_size - data[0]) > self.deviation:
                 if self.cur_eth_size > data[0]:
+                    self.eth_price = data[0]
                     return True, "decrease"
                 else:
+                    self.eth_price = data[0]
                     return True, "increase"
             else:
                 return False, "no_change"
