@@ -1,5 +1,7 @@
 import os
 import asyncio
+import signal
+import sys
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
@@ -49,6 +51,7 @@ async def set_deviation_command(update: Update, context: ContextTypes.DEFAULT_TY
             return
         
         if client is None:
+            await update.message.reply_text("⏳ Инициализация клиента, подождите...")
             client = HyperliquidClient()
         
         client.set_deviation(deviation)
@@ -76,6 +79,7 @@ async def set_timeout_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         
         if client is None:
+            await update.message.reply_text("⏳ Инициализация клиента, подождите...")
             client = HyperliquidClient()
         
         client.set_timeout(timeout)
@@ -157,6 +161,7 @@ async def start_monitoring_command(update: Update, context: ContextTypes.DEFAULT
         return
     
     if client is None:
+        await update.message.reply_text("⏳ Инициализация клиента, подождите...")
         client = HyperliquidClient()
     
     client.start_control_loop()
@@ -192,53 +197,75 @@ async def stop_monitoring_command(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def run_monitoring_loop(client: HyperliquidClient):
-    while client.control_loop_flag:
-        try:
-            success, action = client.check_to_change_position()
-            
-            message = f"⏰ {asyncio.get_event_loop().time()}\n"
-            
-            if success:
-                message += f"🔄 Действие: {action}\n"
+    try:
+        while client.control_loop_flag:
+            try:
+                success, action = client.check_to_change_position()
                 
-                if action == "place_min_short":
-                    result_success, result = client.place_min_short()
-                    message += f"   place_min_short: {'✅' if result_success else '❌'}\n"
-                elif action == "place_max_short":
-                    result_success, result = client.place_max_short()
-                    message += f"   place_max_short: {'✅' if result_success else '❌'}\n"
-                elif action == "decrease":
-                    result_success, result = client.decrease_short()
-                    message += f"   Уменьшен шорт: {'✅' if result_success else '❌'}\n"
-                elif action == "increase":
-                    result_success, result = client.increase_short()
-                    message += f"   Увеличен шорт: {'✅' if result_success else '❌'}\n"
+                message = f"⏰ {asyncio.get_event_loop().time()}\n"
                 
-                if result_success and isinstance(result, dict):
-                    filled = result.get('response', {}).get('data', {}).get('statuses', [{}])[0].get('filled')
-                    if filled:
-                        message += f"   Исполнено: {filled.get('totalSz')} ETH @ ${filled.get('avgPx')}"
-            else:
-                message += f"✅ {action}"
+                if success:
+                    message += f"🔄 Действие: {action}\n"
+                    
+                    if action == "place_min_short":
+                        result_success, result = client.place_min_short()
+                        message += f"   place_min_short: {'✅' if result_success else '❌'}\n"
+                    elif action == "place_max_short":
+                        result_success, result = client.place_max_short()
+                        message += f"   place_max_short: {'✅' if result_success else '❌'}\n"
+                    elif action == "decrease":
+                        result_success, result = client.decrease_short()
+                        message += f"   Уменьшен шорт: {'✅' if result_success else '❌'}\n"
+                    elif action == "increase":
+                        result_success, result = client.increase_short()
+                        message += f"   Увеличен шорт: {'✅' if result_success else '❌'}\n"
+                    
+                    if result_success and isinstance(result, dict):
+                        filled = result.get('response', {}).get('data', {}).get('statuses', [{}])[0].get('filled')
+                        if filled:
+                            message += f"   Исполнено: {filled.get('totalSz')} ETH @ ${filled.get('avgPx')}"
+                else:
+                    message += f"✅ {action}"
+                
+                if hasattr(client, 'telegram_bot') and client.telegram_bot:
+                    await client.telegram_bot.send_message(
+                        chat_id=client.telegram_chat_id,
+                        text=message
+                    )
+                
+            except Exception as e:
+                error_msg = f"❌ Ошибка в цикле: {e}"
+                if hasattr(client, 'telegram_bot') and client.telegram_bot:
+                    await client.telegram_bot.send_message(
+                        chat_id=client.telegram_chat_id,
+                        text=error_msg
+                    )
             
-            if hasattr(client, 'telegram_bot') and client.telegram_bot:
-                await client.telegram_bot.send_message(
-                    chat_id=client.telegram_chat_id,
-                    text=message
-                )
-            
-        except Exception as e:
-            error_msg = f"❌ Ошибка в цикле: {e}"
-            if hasattr(client, 'telegram_bot') and client.telegram_bot:
-                await client.telegram_bot.send_message(
-                    chat_id=client.telegram_chat_id,
-                    text=error_msg
-                )
-        
-        await asyncio.sleep(client.get_timeout())
+            await asyncio.sleep(client.get_timeout())
+    except asyncio.CancelledError:
+        print("   Задача мониторинга отменена")
+        raise
+
+
+def signal_handler(sig, frame):
+    """Обработчик сигнала завершения (Ctrl+C)"""
+    global client, monitoring_task
+    
+    print("\n\n🛑 Получен сигнал завершения, останавливаем бот...")
+    
+    if client:
+        client.stop_control_loop()
+    
+    if monitoring_task and not monitoring_task.done():
+        monitoring_task.cancel()
+    
+    print("✅ Бот остановлен")
+    sys.exit(0)
 
 
 def main():
+    global client
+    
     if not BOT_TOKEN:
         print("❌ TELEGRAM_BOT_TOKEN не установлен в .env")
         print("\nДобавьте в .env:")
@@ -250,8 +277,22 @@ def main():
         print("❌ TELEGRAM_USER_ID не установлен в .env")
         return
     
+    # Регистрируем обработчик сигнала Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     print("🤖 Запуск Telegram бота...")
     print(f"   Разрешенный пользователь ID: {ALLOWED_USER_ID}")
+    
+    # Инициализация клиента при старте (займет время один раз)
+    print("⏳ Инициализация Hyperliquid клиента...")
+    try:
+        client = HyperliquidClient()
+        print("✅ Клиент инициализирован")
+    except Exception as e:
+        print(f"⚠️  Не удалось инициализировать клиент: {e}")
+        print("   Клиент будет создан при первом использовании")
+        client = None
     
     application = Application.builder().token(BOT_TOKEN).build()
     
@@ -263,7 +304,16 @@ def main():
     application.add_handler(CommandHandler("status", status_command))
     
     print("✅ Telegram бот запущен!")
-    application.run_polling()
+    print("   Нажмите Ctrl+C для остановки\n")
+    
+    try:
+        application.run_polling()
+    except KeyboardInterrupt:
+        print("\n🛑 Остановка бота...")
+    finally:
+        if client:
+            client.stop_control_loop()
+        print("✅ Бот остановлен")
 
 if __name__ == "__main__":
     main()

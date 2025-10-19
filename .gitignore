@@ -1,5 +1,6 @@
 /archive
 /readmes
 /venv
+/__pycache__
 ekubaGetter.py
 test_subbacount.py 

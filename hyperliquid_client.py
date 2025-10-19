@@ -32,8 +32,8 @@ class HyperliquidClient:
         )
         self.info = Info(self.base_url, skip_ws=True)
 
-        self.deviation = 0.5
-        self.timeout = 60
+        self.deviation = 0.004
+        self.timeout = 15
 
         self.control_loop_flag = True
 
@@ -78,7 +78,7 @@ class HyperliquidClient:
         if success:
             ekubo_eth_size = data[0]
         
-        increase_coef = (ekubo_eth_size - self.cur_eth_size) // self.deviation
+        increase_coef = abs(ekubo_eth_size - self.cur_eth_size) // self.deviation
 
         size_eth = max(
             math.ceil((10 / eth_price) * 1000) / 1000,
@@ -115,7 +115,7 @@ class HyperliquidClient:
         if success:
             ekubo_eth_size = data[0]
         
-        decrease_coef = (ekubo_eth_size - self.cur_eth_size) // self.deviation
+        decrease_coef = abs(ekubo_eth_size - self.cur_eth_size) // self.deviation
         
         size_eth = max(
             math.ceil((10 / eth_price) * 1000) / 1000,
@@ -305,7 +305,7 @@ class HyperliquidClient:
                 return True, "place_max_short"
 
         if success:
-            if abs(self.cur_eth_size - data[0]) > self.deviation:
+            if abs(self.cur_eth_size - data[0]) >= self.deviation:
                 if self.cur_eth_size > data[0]:
                     return True, "decrease"
                 else:
