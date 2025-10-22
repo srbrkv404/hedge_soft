@@ -2,6 +2,7 @@ import os
 import asyncio
 import signal
 import sys
+from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
@@ -106,16 +107,16 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fees_success, fees_data = client.get_ekubo_fees()
     
     if ekubo_success:
-        eth_in_pool = ekubo_data[0]
-        usdc_in_pool = ekubo_data[1]
-        ekubo_status = f"ETH: {eth_in_pool}, USDC: {usdc_in_pool}"
+        eth_in_pool = round(ekubo_data[0], 5)
+        usdc_in_pool = round(ekubo_data[1], 2)
+        ekubo_status = f"{eth_in_pool} ETH | {usdc_in_pool} USDC"
     else:
         ekubo_status = f"❌ Ошибка: {ekubo_data}"
     
     if fees_success:
-        fee_eth_in_pool = fees_data[0]
-        fee_usdc_in_pool = fees_data[1]
-        fees_status = f"ETH: {fee_eth_in_pool:.6f}, USDC: {fee_usdc_in_pool:.6f}"
+        fee_eth_in_pool = round(fees_data[0], 5)
+        fee_usdc_in_pool = round(fees_data[1], 2)
+        fees_status = f"{fee_eth_in_pool:.5f} ETH | {fee_usdc_in_pool:.2f} USDC"
     else:
         fees_status = f"❌ Ошибка: {fees_data}"
 
@@ -124,7 +125,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if hl_position:
             short_size = float(hl_position['szi'])
             short_entry = float(hl_position['entryPx'])
-            hl_status = f"SHORT {short_size:.6f} ETH @ ${short_entry:.2f}"
+            hl_status = f"{short_size:.5f} ETH | Entry price ${short_entry:.2f}"
         else:
             hl_status = "Нет позиций"
     except:
@@ -136,13 +137,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔄 Мониторинг: {'🟢 Запущен' if is_running else '🔴 Остановлен'}
 
 ⚙️ Параметры:
-  Deviation: {client.get_deviation()}
-  Timeout: {client.get_timeout()} сек
+  Deviation: {client.get_deviation()} ETH
+  Timeout: {client.get_timeout()} sec
   
-💰 Цена ETH: ${client.get_eth_price():.2f}
+💰 ETH price: ${client.get_eth_price():.2f}
 
-🏊 Ekubo пул: {ekubo_status}
-🏦 Hyperliquid: {hl_status}
+🏊 Ekubo pool: {ekubo_status}
+🏦 HL short: {hl_status}
 💰 Ekubo fees: {fees_status}
     """
     
@@ -202,17 +203,18 @@ async def run_monitoring_loop(client: HyperliquidClient):
             try:
                 success, action = client.check_to_change_position()
                 
-                message = f"⏰ {asyncio.get_event_loop().time()}\n"
+                current_time = datetime.now().strftime("%H:%M:%S %d.%m.%Y")
+                message = f"⏰ {current_time}\n"
                 
                 if success:
                     message += f"🔄 Действие: {action}\n"
                     
                     if action == "place_min_short":
                         result_success, result = client.place_min_short()
-                        message += f"   place_min_short: {'✅' if result_success else '❌'}\n"
+                        message += f"   Выставлен минимальный шорт: {'✅' if result_success else '❌'}\n"
                     elif action == "place_max_short":
                         result_success, result = client.place_max_short()
-                        message += f"   place_max_short: {'✅' if result_success else '❌'}\n"
+                        message += f"   Выставлен максимальный шорт: {'✅' if result_success else '❌'}\n"
                     elif action == "decrease":
                         result_success, result = client.decrease_short()
                         message += f"   Уменьшен шорт: {'✅' if result_success else '❌'}\n"
@@ -227,6 +229,31 @@ async def run_monitoring_loop(client: HyperliquidClient):
                 else:
                     message += f"✅ {action}"
                 
+                hl_eth = 0
+                hl_pos = client.get_hl_positions()
+                if hl_pos:
+                    hl_eth = round(float(hl_pos['szi']), 5)
+                
+                ekubo_eth = 0
+                ekubo_usdc = 0
+                success, ekubo_pos = client.get_ekubo_positions()
+                if success:
+                    ekubo_eth = round(ekubo_pos[0], 5)
+                    ekubo_usdc = round(ekubo_pos[1], 2)
+                
+                eth_fees = 0
+                usdc_fees = 0
+                success, ekubo_fees = client.get_ekubo_fees()
+                if success:
+                    eth_fees = round(ekubo_fees[0], 5)
+                    usdc_fees = round(ekubo_fees[1], 2)
+                
+                message += "=====================\n"
+                message += f"HL short: {hl_eth} ETH\n"
+                message += f"Ekubo pool: {ekubo_eth} ETH | {ekubo_usdc} USDC\n"
+                message += f"Ekubo fees: {eth_fees} ETH | {usdc_fees} USDC\n"
+                message += "=====================\n"
+                    
                 if hasattr(client, 'telegram_bot') and client.telegram_bot:
                     await client.telegram_bot.send_message(
                         chat_id=client.telegram_chat_id,
