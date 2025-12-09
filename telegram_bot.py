@@ -27,6 +27,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Команды:
 /set_deviation <число> - Установить отклонение (в ETH до 3 знаков после запятой)
 /set_timeout <секунды> - Установить интервал проверки (в секундах)
+/set_delta <число> - Установить коэффициент дельты (шорт = пул × delta, по умолчанию 1.0)
 /start_monitoring - Запустить софт
 /stop_monitoring - Остановить софт
 /status - Текущие настройки
@@ -90,6 +91,35 @@ async def set_timeout_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Неверный формат числа")
 
 
+async def set_delta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ALLOWED_USER_ID:
+        await update.message.reply_text("❌ Нет доступа")
+        return
+    
+    global client
+    
+    if not context.args:
+        await update.message.reply_text("❌ Укажите значение: /set_delta 1.0")
+        await update.message.reply_text("💡 Примеры:\n  /set_delta 1.0 - дельта-нейтральная (шорт = пул)\n  /set_delta 0.5 - шорт в 2 раза меньше пула\n  /set_delta 1.5 - шорт в 1.5 раза больше пула")
+        return
+    
+    try:
+        delta = float(context.args[0])
+        if delta <= 0:
+            await update.message.reply_text("❌ Delta должна быть > 0")
+            return
+        
+        if client is None:
+            await update.message.reply_text("⏳ Инициализация клиента, подождите...")
+            client = HyperliquidClient()
+        
+        client.set_delta(delta)
+        await update.message.reply_text(f"✅ Delta установлена: {delta}\n💡 Целевой шорт = Ekubo пул × {delta}")
+        
+    except ValueError:
+        await update.message.reply_text("❌ Неверный формат числа")
+
+
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         await update.message.reply_text("❌ Нет доступа")
@@ -131,6 +161,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         hl_status = "Нет позиций"
     
+    # Вычисляем целевой шорт с учетом delta
+    target_short = 0
+    if ekubo_success:
+        target_short = round(ekubo_data[0] * client.get_delta(), 5)
+    
     status_text = f"""
 📊 Статус бота:
 
@@ -139,10 +174,12 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⚙️ Параметры:
   Deviation: {client.get_deviation()} ETH
   Timeout: {client.get_timeout()} sec
+  Delta: {client.get_delta()}
   
 💰 ETH price: ${client.get_eth_price():.2f}
 
 🏊 Ekubo pool: {ekubo_status}
+🎯 Target short: {target_short} ETH
 🏦 HL short: {hl_status}
 💰 Ekubo fees: {fees_status}
     """
@@ -326,6 +363,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("set_deviation", set_deviation_command))
     application.add_handler(CommandHandler("set_timeout", set_timeout_command))
+    application.add_handler(CommandHandler("set_delta", set_delta_command))
     application.add_handler(CommandHandler("start_monitoring", start_monitoring_command))
     application.add_handler(CommandHandler("stop_monitoring", stop_monitoring_command))
     application.add_handler(CommandHandler("status", status_command))

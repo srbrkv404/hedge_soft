@@ -34,6 +34,7 @@ class HyperliquidClient:
 
         self.deviation = 0.004
         self.timeout = 15
+        self.delta = 1.0  # Коэффициент дельты: шорт = ekubo_eth * delta
 
         self.control_loop_flag = True
 
@@ -50,11 +51,17 @@ class HyperliquidClient:
     def set_timeout(self, timeout: int):
         self.timeout = timeout
 
+    def set_delta(self, delta: float):
+        self.delta = delta
+
     def get_deviation(self) -> float:
         return self.deviation
 
     def get_timeout(self) -> int:
         return self.timeout
+
+    def get_delta(self) -> float:
+        return self.delta
 
     def update_cur_eth_size(self):
         hl_position = self.get_hl_positions()
@@ -78,7 +85,9 @@ class HyperliquidClient:
         if success:
             ekubo_eth_size = data[0]
         
-        increase_coef = abs(ekubo_eth_size - self.cur_eth_size) // self.deviation
+        # Целевой шорт с учетом delta
+        target_short = ekubo_eth_size * self.delta
+        increase_coef = abs(target_short - self.cur_eth_size) // self.deviation
 
         size_eth = max(
             math.ceil((10 / eth_price) * 1000) / 1000,
@@ -115,7 +124,9 @@ class HyperliquidClient:
         if success:
             ekubo_eth_size = data[0]
         
-        decrease_coef = abs(ekubo_eth_size - self.cur_eth_size) // self.deviation
+        # Целевой шорт с учетом delta
+        target_short = ekubo_eth_size * self.delta
+        decrease_coef = abs(target_short - self.cur_eth_size) // self.deviation
         
         size_eth = max(
             math.ceil((10 / eth_price) * 1000) / 1000,
@@ -182,7 +193,9 @@ class HyperliquidClient:
 
         if position:
             current_size = float(position['szi'])
-            size_eth = max(math.ceil((10 / eth_price) * 1000) / 1000, round(ekubo_eth_size - current_size, 3))
+            # Целевой шорт с учетом delta
+            target_short = ekubo_eth_size * self.delta
+            size_eth = max(math.ceil((10 / eth_price) * 1000) / 1000, round(target_short - current_size, 3))
 
             limit_price = round(eth_price * 0.99, 1)
 
@@ -305,8 +318,10 @@ class HyperliquidClient:
                 return True, "place_max_short"
 
         if success:
-            if abs(self.cur_eth_size - data[0]) >= self.deviation:
-                if self.cur_eth_size > data[0]:
+            # Целевой шорт с учетом delta
+            target_short = data[0] * self.delta
+            if abs(self.cur_eth_size - target_short) >= self.deviation:
+                if self.cur_eth_size > target_short:
                     return True, "decrease"
                 else:
                     return True, "increase"
